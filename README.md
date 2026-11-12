@@ -4,37 +4,46 @@
 #include <cmath>
 using namespace std;
 
-const double A  = 0.0;   // левая граница интервала
-const double B  = 3.0;   // правая граница интервала
-const double DX = 0.1;   // шаг дискретизации
-const int N = 31;        // (B - A) / DX + 1 = 31 точка
+const double A  = 0.0;
+const double B  = 3.0;
+const double DX = 0.1;
+const int N = 31;        // (B - A) / DX + 1
 
 double f(double x)
 {
     return log(x * x - 2 * x + 2);
 }
 
+// вывод таблицы в любой поток (экран или файл)
+void printTable(ostream& out, double T[2][N])
+{
+    const string line = "+----+--------+--------+----------------+----------------+";
+
+    out << line << "\n";
+    out << "| " << setw(2) << "i" << " | " << setw(6) << "X[i]" << " | " << setw(6) << "Y[i]"
+        << " | " << setw(14) << "&X[i]" << " | " << setw(14) << "&Y[i]" << " |\n";
+    out << line << "\n";
+
+    out << fixed << setprecision(4);
+    for (int i = 0; i < N; i++)
+    {
+        out << "| " << setw(2) << i
+            << " | " << setw(6) << T[0][i]
+            << " | " << setw(6) << T[1][i]
+            << " | " << setw(14) << (void*)&T[0][i]
+            << " | " << setw(14) << (void*)&T[1][i] << " |\n";
+    }
+    out << line << "\n";
+}
+
 int main()
 {
-    // строка 0 - значения X, строка 1 - значения Y
     double T[2][N];
 
     for (int i = 0; i < N; i++)
     {
         T[0][i] = A + i * DX;
         T[1][i] = f(T[0][i]);
-    }
-
-    ofstream fout("result.txt");
-    cout << fixed << setprecision(4);
-    fout << fixed << setprecision(4);
-
-    for (int i = 0; i < N; i++)
-    {
-        cout << i << " : " << T[0][i] << " : " << T[1][i]
-             << " : " << &T[0][i] << " : " << &T[1][i] << endl;
-        fout << i << " : " << T[0][i] << " : " << T[1][i]
-             << " : " << &T[0][i] << " : " << &T[1][i] << endl;
     }
 
     double ymax = T[1][0], ymin = T[1][0];
@@ -45,11 +54,16 @@ int main()
         if (T[1][i] < ymin) { ymin = T[1][i]; imin = i; }
     }
 
-    cout << "Наибольшее: y = " << ymax << " при x = " << T[0][imax] << endl;
-    cout << "Наименьшее: y = " << ymin << " при x = " << T[0][imin] << endl;
-    fout << "Наибольшее: y = " << ymax << " при x = " << T[0][imax] << endl;
-    fout << "Наименьшее: y = " << ymin << " при x = " << T[0][imin] << endl;
-
+    ofstream fout("result.txt");
+    ostream* streams[2] = { &cout, &fout };
+    for (int k = 0; k < 2; k++)
+    {
+        ostream& out = *streams[k];
+        printTable(out, T);
+        out << fixed << setprecision(4);
+        out << "Наибольшее: y = " << ymax << " при x = " << T[0][imax] << "\n";
+        out << "Наименьшее: y = " << ymin << " при x = " << T[0][imin] << "\n";
+    }
     fout.close();
     return 0;
 }
