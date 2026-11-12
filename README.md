@@ -1,3 +1,64 @@
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <cmath>
+using namespace std;
+
+const double A  = 0.0;   // левая граница интервала
+const double B  = 3.0;   // правая граница интервала
+const double DX = 0.1;   // шаг дискретизации
+const int N = 31;        // (B - A) / DX + 1 = 31 точка
+
+double f(double x)
+{
+    return log(x * x - 2 * x + 2);
+}
+
+int main()
+{
+    // строка 0 - значения X, строка 1 - значения Y
+    double T[2][N];
+
+    for (int i = 0; i < N; i++)
+    {
+        T[0][i] = A + i * DX;
+        T[1][i] = f(T[0][i]);
+    }
+
+    ofstream fout("result.txt");
+    cout << fixed << setprecision(4);
+    fout << fixed << setprecision(4);
+
+    for (int i = 0; i < N; i++)
+    {
+        cout << i << " : " << T[0][i] << " : " << T[1][i]
+             << " : " << &T[0][i] << " : " << &T[1][i] << endl;
+        fout << i << " : " << T[0][i] << " : " << T[1][i]
+             << " : " << &T[0][i] << " : " << &T[1][i] << endl;
+    }
+
+    double ymax = T[1][0], ymin = T[1][0];
+    int imax = 0, imin = 0;
+    for (int i = 1; i < N; i++)
+    {
+        if (T[1][i] > ymax) { ymax = T[1][i]; imax = i; }
+        if (T[1][i] < ymin) { ymin = T[1][i]; imin = i; }
+    }
+
+    cout << "Наибольшее: y = " << ymax << " при x = " << T[0][imax] << endl;
+    cout << "Наименьшее: y = " << ymin << " при x = " << T[0][imin] << endl;
+    fout << "Наибольшее: y = " << ymax << " при x = " << T[0][imax] << endl;
+    fout << "Наименьшее: y = " << ymin << " при x = " << T[0][imin] << endl;
+
+    fout.close();
+    return 0;
+}
+
+
+
+
+
+
 INSERT INTO users (surname, name, patronymic, email, login, password_hash, role_id)
 VALUES ('Иванов', 'Иван', 'Иванович', 'ivanov@mail.ru', 'ivanov', 'hash1', 1),
        ('Петрова', 'Анна', 'Сергеевна', 'petrova@mail.ru', 'petrova', 'hash2', 1),
