@@ -1,5 +1,157 @@
 
 
+# ---------- Администратор ----------
+
+def _groups_menu():
+    while True:
+        print_header("Группы")
+        print("1. Показать")
+        print("2. Добавить")
+        print("3. Удалить")
+        print("0. Назад")
+        choice = ask_choice()
+
+        if choice == "1":
+            _show_groups()
+        elif choice == "2":
+            name = ask("Название")
+            course = ask_int("Курс", 1, 6)
+            faculty = ask("Факультет")
+            do(admin_service.create_group, "Группа добавлена",
+               name, course, faculty)
+        elif choice == "3":
+            _show_groups()
+            group_id = ask_int("ID группы")
+            do(admin_service.delete_group, "Группа удалена", group_id)
+        elif choice == "0":
+            break
+        else:
+            print("Неверный выбор")
+
+
+def _subjects_menu():
+    while True:
+        print_header("Предметы")
+        print("1. Показать")
+        print("2. Добавить")
+        print("3. Удалить")
+        print("0. Назад")
+        choice = ask_choice()
+
+        if choice == "1":
+            _show_subjects()
+        elif choice == "2":
+            name = ask("Название")
+            hours = ask_int("Количество часов", 1)
+            semester = ask_int("Семестр", 1, 12)
+            do(admin_service.create_subject, "Предмет добавлен",
+               name, hours, semester)
+        elif choice == "3":
+            _show_subjects()
+            subject_id = ask_int("ID предмета")
+            do(admin_service.delete_subject, "Предмет удалён", subject_id)
+        elif choice == "0":
+            break
+        else:
+            print("Неверный выбор")
+
+
+def _students_menu():
+    while True:
+        print_header("Студенты")
+        print("1. Показать")
+        print("2. Удалить")
+        print("0. Назад")
+        choice = ask_choice()
+
+        if choice == "1":
+            _show_students()
+        elif choice == "2":
+            _show_students()
+            student_id = ask_int("ID студента")
+            if confirm("Удалить студента"):
+                do(admin_service.delete_student, "Студент удалён", student_id)
+        elif choice == "0":
+            break
+        else:
+            print("Неверный выбор")
+
+
+def _teachers_menu():
+    while True:
+        print_header("Преподаватели")
+        print("1. Показать")
+        print("2. Назначить на предмет")
+        print("3. Снять с предмета")
+        print("4. Удалить")
+        print("0. Назад")
+        choice = ask_choice()
+
+        if choice == "1":
+            _show_teachers()
+        elif choice == "2":
+            _show_teachers()
+            teacher_id = ask_int("ID преподавателя")
+            _show_subjects()
+            subject_id = ask_int("ID предмета")
+            do(admin_service.assign_teacher, "Преподаватель назначен",
+               teacher_id, subject_id)
+        elif choice == "3":
+            _show_teachers()
+            teacher_id = ask_int("ID преподавателя")
+            subjects = run(admin_service.get_teacher_subjects, teacher_id)
+            if subjects is not None:
+                print_table(
+                    ["ID", "Предмет"],
+                    [[s.subject_id, s.name] for s in subjects]
+                )
+            subject_id = ask_int("ID предмета")
+            do(admin_service.unassign_teacher, "Назначение снято",
+               teacher_id, subject_id)
+        elif choice == "4":
+            _show_teachers()
+            teacher_id = ask_int("ID преподавателя")
+            if confirm("Удалить преподавателя"):
+                do(admin_service.delete_teacher, "Преподаватель удалён",
+                   teacher_id)
+        elif choice == "0":
+            break
+        else:
+            print("Неверный выбор")
+
+
+def admin_menu(user):
+    while True:
+        print_header(f"Администратор: {user.login}")
+        print("1. Группы")
+        print("2. Предметы")
+        print("3. Студенты")
+        print("4. Преподаватели")
+        print("0. Выход")
+        choice = ask_choice()
+
+        if choice == "1":
+            _groups_menu()
+        elif choice == "2":
+            _subjects_menu()
+        elif choice == "3":
+            _students_menu()
+        elif choice == "4":
+            _teachers_menu()
+        elif choice == "0":
+            break
+        else:
+            print("Неверный выбор")
+
+
+
+
+
+
+
+
+
+
 # ---------- Преподаватель ----------
 
 def _pick_student_grade(teacher_id: int):
