@@ -1,3 +1,114 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <windows.h>
+
+using namespace std;
+
+void printHeader()
+{
+    cout << "************************************************************************\n";
+    cout << "* Нижегородский государственный технический университет               *\n";
+    cout << "* Лабораторная работа №5. Вариант 19.                                  *\n";
+    cout << "* Выполнил студент Левенков Никита Владимирович                        *\n";
+    cout << "************************************************************************\n\n";
+}
+
+int main()
+{
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
+
+    printHeader();
+
+    string inputName, outputName;
+    cout << "Введите имя входного файла (например, input.txt): ";
+    cin >> inputName;
+    cout << "Введите имя выходного файла (например, output.txt): ";
+    cin >> outputName;
+
+    // 1. Открываем входной файл
+    ifstream fin(inputName);
+    if (!fin.is_open())
+    {
+        cout << "\nОшибка: файл \"" << inputName << "\" не найден!\n";
+        cout << "Создайте его рядом с программой и запустите снова.\n";
+        return 1;
+    }
+
+    // Считываем весь текст из файла
+    string text((istreambuf_iterator<char>(fin)), istreambuf_iterator<char>());
+    fin.close();
+
+    cout << "\nИсходный текст:\n" << text << "\n\n";
+
+    // 2. Ищем все слова (запоминаем индекс начала и длину каждого слова)
+    string delims = " \t\n\r.,!?;:\"()[]{}<>-=/\\";
+    vector<int> wordStart;
+    vector<int> wordLen;
+
+    int i = 0;
+    int n = text.length();
+    while (i < n)
+    {
+        while (i < n && delims.find(text[i]) != string::npos)
+            i++;
+
+        if (i < n)
+        {
+            int start = i;
+            while (i < n && delims.find(text[i]) == string::npos)
+                i++;
+
+            wordStart.push_back(start);
+            wordLen.push_back(i - start);
+        }
+    }
+
+    int count = wordStart.size();
+    cout << "Количество слов в тексте: " << count << "\n\n";
+
+    // 3. Меняем местами 1-е слово (индекс 0) и 5-е слово (индекс 4)
+    string result = text;
+    if (count >= 5)
+    {
+        string firstWord = text.substr(wordStart, wordLen);
+        string fifthWord = text.substr(wordStart, wordLen);
+
+        // Сначала заменяем 5-е слово, потом 1-е, чтобы не сбить позиции
+        result.replace(wordStart, wordLen, firstWord);
+        result.replace(wordStart, wordLen, fifthWord);
+
+        cout << "Текст после перестановки 1-го и 5-го слов:\n" << result << "\n\n";
+    }
+    else
+    {
+        cout << "В тексте меньше 5 слов, перестановка не выполнена.\n\n";
+    }
+
+    // 4. Записываем результат в выходной файл на компьютер
+    ofstream fout(outputName);
+    if (fout.is_open())
+    {
+        fout << "Количество слов в тексте: " << count << "\n\n";
+        fout << "Результат:\n" << result << "\n";
+        fout.close();
+        cout << "Результат сохранён в файл \"" << outputName << "\".\n";
+    }
+    else
+    {
+        cout << "Ошибка создания файла \"" << outputName << "\"!\n";
+    }
+
+    return 0;
+}
+
+
+
+
+
+
 from src.students_grades.auth import login, register
 from src.students_grades.database.database import init_db
 from src.students_grades.menu import admin_menu, student_menu, teacher_menu
