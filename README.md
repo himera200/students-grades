@@ -1,109 +1,136 @@
-#include <iostream>
+/* Лабораторная работа 5. Вариант 19.
+ * Определить количество слов в тексте и поменять местами
+ * первое и пятое слова.
+ * Конец ввода: Ctrl+Z, затем Enter (Windows) / Ctrl+D (Linux). */
+#include <cctype>
+#include <cstddef>
 #include <fstream>
+#include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
+
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
-using namespace std;
+const unsigned int CONSOLE_CODEPAGE = 65001U;  // UTF-8 (для KOI-8R: 20866)
 
-void printHeader()
-{
-    cout << "************************************************************************\n";
-    cout << "* Нижегородский государственный технический университет               *\n";
-    cout << "* Лабораторная работа №5. Вариант 19.                                  *\n";
-    cout << "* Выполнил студент Левенков Никита Владимирович                        *\n";
-    cout << "************************************************************************\n\n";
+using std::cout;
+using std::cin;
+using std::string;
+using std::vector;
+
+const char *const INPUT_FILE  = "input.txt";
+const char *const OUTPUT_FILE = "output.txt";
+
+struct Word {
+    std::size_t begin;
+    std::size_t end;   // не включается
+};
+
+static bool isSpace(char c) {
+    return std::isspace(static_cast<unsigned char>(c)) != 0;
 }
 
-int main()
-{
-    SetConsoleOutputCP(65001);
-    SetConsoleCP(65001);
+static vector<Word> findWords(const string &text) {
+    vector<Word> words;
+    std::size_t i = 0U, n = text.size();
+    while (i < n) {
+        while (i < n && isSpace(text[i])) i++;
+        if (i >= n) break;
+        Word w;
+        w.begin = i;
+        while (i < n && !isSpace(text[i])) i++;
+        w.end = i;
+        words.push_back(w);
+    }
+    return words;
+}
 
-    printHeader();
+static string swapWords(const string &text, const Word &a, const Word &b) {
+    string result;
+    result += text.substr(0, a.begin);
+    result += text.substr(b.begin, b.end - b.begin);
+    result += text.substr(a.end, b.begin - a.end);
+    result += text.substr(a.begin, a.end - a.begin);
+    result += text.substr(b.end);
+    return result;
+}
 
-    string inputName, outputName;
-    cout << "Введите имя входного файла (например, input.txt): ";
-    cin >> inputName;
-    cout << "Введите имя выходного файла (например, output.txt): ";
-    cin >> outputName;
+static bool enterTextFromKeyboard() {
+    cout << "Введите текст. Конец ввода: Ctrl+Z и Enter (Windows) "
+            "или Ctrl+D (Linux).\n";
+    string text, line;
+    while (std::getline(cin, line)) {
+        text += line;
+        text += '\n';
+    }
+    std::ofstream out(INPUT_FILE, std::ios::binary);
+    if (!out) return false;
+    out << text;
+    return static_cast<bool>(out);
+}
 
-    // 1. Открываем входной файл
-    ifstream fin(inputName);
-    if (!fin.is_open())
-    {
-        cout << "\nОшибка: файл \"" << inputName << "\" не найден!\n";
-        cout << "Создайте его рядом с программой и запустите снова.\n";
+static bool readFile(const char *name, string &text) {
+    std::ifstream in(name, std::ios::binary);
+    if (!in) return false;
+    text.assign(std::istreambuf_iterator<char>(in),
+                std::istreambuf_iterator<char>());
+    return true;
+}
+
+int main() {
+#ifdef _WIN32
+    SetConsoleCP(CONSOLE_CODEPAGE);
+    SetConsoleOutputCP(CONSOLE_CODEPAGE);
+#endif
+    int choice = 0;
+    cout << "Лабораторная работа 5, вариант 19\n"
+            "1 - ввести текст с клавиатуры (будет сохранен в "
+         << INPUT_FILE << ")\n"
+            "2 - использовать уже существующий файл " << INPUT_FILE << "\n"
+            "Ваш выбор: ";
+    cin >> choice;
+    cin.ignore(10000, '\n');
+
+    if (choice == 1) {
+        if (!enterTextFromKeyboard()) {
+            cout << "Ошибка: не удалось сохранить файл " << INPUT_FILE << "\n";
+            return 1;
+        }
+        cout << "\nТекст сохранен в файл " << INPUT_FILE << "\n";
+    }
+
+    string text;
+    if (!readFile(INPUT_FILE, text)) {
+        cout << "Ошибка: не удалось открыть файл " << INPUT_FILE << "\n";
         return 1;
     }
 
-    // Считываем весь текст из файла
-    string text((istreambuf_iterator<char>(fin)), istreambuf_iterator<char>());
-    fin.close();
+    vector<Word> words = findWords(text);
+    cout << "\nКоличество слов в тексте: " << words.size() << "\n";
 
-    cout << "\nИсходный текст:\n" << text << "\n\n";
-
-    // 2. Ищем все слова (запоминаем индекс начала и длину каждого слова)
-    string delims = " \t\n\r.,!?;:\"()[]{}<>-=/\\";
-    vector<int> wordStart;
-    vector<int> wordLen;
-
-    int i = 0;
-    int n = text.length();
-    while (i < n)
-    {
-        while (i < n && delims.find(text[i]) != string::npos)
-            i++;
-
-        if (i < n)
-        {
-            int start = i;
-            while (i < n && delims.find(text[i]) == string::npos)
-                i++;
-
-            wordStart.push_back(start);
-            wordLen.push_back(i - start);
-        }
-    }
-
-    int count = wordStart.size();
-    cout << "Количество слов в тексте: " << count << "\n\n";
-
-    // 3. Меняем местами 1-е слово (индекс 0) и 5-е слово (индекс 4)
     string result = text;
-    if (count >= 5)
-    {
-        string firstWord = text.substr(wordStart, wordLen);
-        string fifthWord = text.substr(wordStart, wordLen);
-
-        // Сначала заменяем 5-е слово, потом 1-е, чтобы не сбить позиции
-        result.replace(wordStart, wordLen, firstWord);
-        result.replace(wordStart, wordLen, fifthWord);
-
-        cout << "Текст после перестановки 1-го и 5-го слов:\n" << result << "\n\n";
-    }
-    else
-    {
-        cout << "В тексте меньше 5 слов, перестановка не выполнена.\n\n";
+    if (words.size() >= 5U) {
+        result = swapWords(text, words[0], words[4]);
+        cout << "Первое и пятое слова поменяны местами.\n";
+    } else {
+        cout << "В тексте меньше пяти слов - обмен невозможен, "
+                "текст не изменен.\n";
     }
 
-    // 4. Записываем результат в выходной файл на компьютер
-    ofstream fout(outputName);
-    if (fout.is_open())
-    {
-        fout << "Количество слов в тексте: " << count << "\n\n";
-        fout << "Результат:\n" << result << "\n";
-        fout.close();
-        cout << "Результат сохранён в файл \"" << outputName << "\".\n";
-    }
-    else
-    {
-        cout << "Ошибка создания файла \"" << outputName << "\"!\n";
-    }
+    cout << "\nРезультат:\n" << result << "\n";
 
+    std::ofstream out(OUTPUT_FILE, std::ios::binary);
+    if (!out) {
+        cout << "Ошибка: не удалось создать файл " << OUTPUT_FILE << "\n";
+        return 1;
+    }
+    out << result;
+    cout << "Результат сохранен в файл " << OUTPUT_FILE << "\n";
     return 0;
 }
-
 
 
 
