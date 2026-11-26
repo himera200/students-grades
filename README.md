@@ -1,3 +1,482 @@
+/* lab4_var12.cpp – Листинг программы для 4-ой лабораторной работы
+*******************************************************************
+* Filename : lab4_var12.cpp
+* Abstract : Лабораторная работа 4, вариант 12
+* Description : Заданы матрицы A (N x M), B (M x L), C (L x K).
+*               Программа находит максимальные элементы amax, bmax,
+*               cmax и значение beta = min{|amax|, |bmax|, |cmax|}.
+*               Данные вводятся вручную или генерируются ЛКГ.
+*               Размер каждой матрицы не более 300 элементов.
+*               Весь код находится в одном файле.
+* Creation Date : 2026 / 11 / 22
+* Author : <ФИО студента>, группа <___>
+* Notes / Platform / Copyrights : ISO C++17, любая ОС
+******************************************************************/
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <cstdlib>
+#include <cstdint>
+#include <new>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+/* Размер каждой матрицы – не более 300 элементов (по заданию)   */
+const int MAX_MATRIX_SIZE = 300;
+
+/* Границы значений при ручном вводе                              */
+const double ELEM_MIN = -10000.0;
+const double ELEM_MAX = 10000.0;
+
+/*=================================================================*/
+/*   МОДУЛЬ 1. Ввод данных                                         */
+/*=================================================================*/
+/* Ограничения на запись числа */
+static const std::size_t MAX_INT_DIGITS      = 9; /* до 9 цифр         */
+static const int         MAX_INTEGER_DIGITS  = 9; /* цифр до точки     */
+static const int         MAX_FRACTION_DIGITS = 3; /* цифр после точки  */
+
+static bool ReadLine(std::string* line) {
+    bool isRead = static_cast<bool>(std::getline(std::cin, *line));
+    if (isRead) {
+        const char* spaces = " \t\r\n";
+        std::size_t first = line->find_first_not_of(spaces);
+        if (first == std::string::npos) {
+            line->clear();               /* пустая строка */
+        } else {
+            std::size_t last = line->find_last_not_of(spaces);
+            *line = line->substr(first, last - first + 1);
+        }
+    }
+    return isRead;
+}
+
+static bool ParseInt(const std::string& text, int minVal, int maxVal,
+                     int* value) {
+    bool isOk = true;
+    bool isNegative = false;
+    std::size_t pos = 0;
+    long long acc = 0;
+
+    if (!text.empty() && (text[0] == '+' || text[0] == '-')) {
+        isNegative = (text[0] == '-');
+        pos = 1;
+    }
+    if (pos >= text.size() || text.size() - pos > MAX_INT_DIGITS) {
+        isOk = false;                    /* нет цифр или слишком длинно */
+    }
+    for (std::size_t i = pos; isOk && i < text.size(); ++i) {
+        if (text[i] < '0' || text[i] > '9') {
+            isOk = false;                /* лишний символ */
+        } else {
+            acc = acc * 10 + (text[i] - '0');
+        }
+    }
+    if (isOk) {
+        if (isNegative) {
+            acc = -acc;
+        }
+        if (acc < minVal || acc > maxVal) {
+            isOk = false;                /* число вне границ */
+        } else {
+            *value = static_cast<int>(acc);
+        }
+    }
+    return isOk;
+}
+
+static bool ParseDouble(const std::string& text, double minVal,
+                        double maxVal, double* value) {
+    bool isOk = true;
+    bool isPointSeen = false;
+    int intDigits = 0;
+    int fracDigits = 0;
+    std::size_t pos = 0;
+    std::string clean;                   /* число с точкой вместо запятой */
+
+    if (!text.empty() && (text[0] == '+' || text[0] == '-')) {
+        clean += text[0];
+        pos = 1;
+    }
+    for (std::size_t i = pos; isOk && i < text.size(); ++i) {
+        char ch = text[i];
+        if (ch >= '0' && ch <= '9') {
+            clean += ch;
+            if (isPointSeen) {
+                ++fracDigits;
+            } else {
+                ++intDigits;
+            }
+        } else if ((ch == '.' || ch == ',') && !isPointSeen) {
+            isPointSeen = true;
+            clean += '.';
+        } else {
+            isOk = false;                /* лишний символ */
+        }
+    }
+    if (isOk) {
+        isOk = (intDigits >= 1 && intDigits <= MAX_INTEGER_DIGITS)
+            && (fracDigits <= MAX_FRACTION_DIGITS)
+            && (!isPointSeen || fracDigits >= 1);
+    }
+    if (isOk) {
+        double number = std::strtod(clean.c_str(), nullptr);
+        if (number == 0.0) {
+            number = 0.0;                /* чтобы не было «-0» */
+        }
+        if (number < minVal || number > maxVal) {
+            isOk = false;
+        } else {
+            *value = number;
+        }
+    }
+    return isOk;
+}
+
+bool InputInt(const char* prompt, int minVal, int maxVal, int* result) {
+    bool isDone = false;
+    bool isAlive = true;
+    std::string line;
+
+    while (!isDone && isAlive) {
+        std::cout << prompt;
+        isAlive = ReadLine(&line);
+        if (isAlive) {
+            isDone = ParseInt(line, minVal, maxVal, result);
+            if (!isDone) {
+                std::cout << "  Ошибка: нужно ввести одно целое число от "
+                          << minVal << " до " << maxVal << ".\n";
+            }
+        }
+    }
+    return isDone;
+}
+
+bool InputRow(const char* prompt, int count, double minVal,
+              double maxVal, double* row) {
+    bool isDone = false;
+    bool isAlive = true;
+    std::string line;
+
+    while (!isDone && isAlive) {
+        std::cout << prompt;
+        isAlive = ReadLine(&line);
+        if (isAlive) {
+            std::istringstream stream(line);
+            std::string token;
+            int got = 0;
+            bool isValid = true;
+
+            while (isValid && (stream >> token)) {
+                if (got >= count) {
+                    isValid = false;     /* чисел больше, чем нужно */
+                } else {
+                    isValid = ParseDouble(token, minVal, maxVal, &row[got]);
+                    if (isValid) {
+                        ++got;
+                    }
+                }
+            }
+            isDone = isValid && (got == count);
+            if (!isDone) {
+                std::cout << "  Ошибка: нужно ввести ровно " << count
+                          << " чис. через пробел, каждое от " << minVal
+                          << " до " << maxVal
+                          << ", не более 3 знаков после запятой.\n";
+            }
+        }
+    }
+    return isDone;
+}
+
+void WaitForEnter(const char* prompt) {
+    std::string line;
+    std::cout << prompt;
+    ReadLine(&line);
+}
+
+/*=================================================================*/
+/*   МОДУЛЬ 2. Работа с матрицами                                 */
+/*=================================================================*/
+/* Числа для генератора случайных чисел (ЛКГ):
+   x = (A * x + C) mod 2^32 – «mod» получается сам (переполнение).  */
+static const std::uint32_t LCG_A = 1664525u;
+static const std::uint32_t LCG_C = 1013904223u;
+
+/* Сгенерированные числа: от -100.000 до 100.000 с шагом 0.001     */
+static const std::uint32_t GEN_STEPS = 200001u;
+static const int GEN_MIN_THOUSANDTHS = -100000;
+
+double* CreateMatrix(int rows, int cols) {
+    double* matr = nullptr;
+    if (rows > 0 && cols > 0) {
+        std::size_t size = static_cast<std::size_t>(rows)
+                         * static_cast<std::size_t>(cols);
+        matr = new (std::nothrow) double[size]();
+    }
+    return matr;
+}
+
+void DestroyMatrix(double** matr) {
+    if (matr != nullptr && *matr != nullptr) {
+        delete[] *matr;
+        *matr = nullptr;
+    }
+}
+
+std::uint32_t NextRandom(std::uint32_t* state) {
+    *state = LCG_A * (*state) + LCG_C;
+    return *state;
+}
+
+void FillMatrixRandom(double* matr, int rows, int cols,
+                      std::uint32_t* state) {
+    int size = rows * cols;
+    for (int idx = 0; idx < size; ++idx) {
+        /* берём старшие биты: они «случайнее» младших */
+        std::uint32_t highBits = NextRandom(state) >> 8;
+        int thousandths = static_cast<int>(highBits % GEN_STEPS)
+                        + GEN_MIN_THOUSANDTHS;
+        matr[idx] = thousandths / 1000.0;
+    }
+}
+
+void PrintMatrix(const char* name, const double* matr, int rows, int cols) {
+    std::ios_base::fmtflags oldFlags = std::cout.flags();
+    std::streamsize oldPrecision = std::cout.precision();
+
+    std::cout << "Матрица " << name << " (" << rows << " x " << cols
+              << "):\n";
+    std::cout << std::fixed << std::setprecision(3);
+    for (int line = 0; line < rows; ++line) {
+        for (int col = 0; col < cols; ++col) {
+            std::cout << std::setw(11) << matr[line * cols + col];
+        }
+        std::cout << '\n';
+    }
+    std::cout.flags(oldFlags);
+    std::cout.precision(oldPrecision);
+}
+
+double AbsValue(double value) {
+    double result = value;
+    if (value < 0.0) {
+        result = -value;
+    }
+    return result;
+}
+
+double MinOfThree(double first, double second, double third) {
+    double result = first;
+    if (second < result) {
+        result = second;
+    }
+    if (third < result) {
+        result = third;
+    }
+    return result;
+}
+
+double FindMaxElement(const double* matr, int rows, int cols) {
+    double maxItem = 0.0;
+    int size = rows * cols;
+    if (matr != nullptr && size > 0) {
+        maxItem = matr[0];
+        for (int idx = 1; idx < size; ++idx) {
+            if (matr[idx] > maxItem) {
+                maxItem = matr[idx];
+            }
+        }
+    }
+    return maxItem;
+}
+
+/*=================================================================*/
+/*   МОДУЛЬ 3. Главная программа                                  */
+/*=================================================================*/
+/* Данные студента – заменить на свои */
+static const char* const STUDENT_INFO =
+    "Выполнил: <ФИО студента>, группа <___>";
+
+static bool InputDimensions(int* n, int* m, int* l, int* k) {
+    std::string prompt;
+
+    std::cout << "Матрицы: A имеет размер N x M, B - M x L, C - L x K.\n"
+              << "Размер каждой матрицы (число элементов) не более "
+              << MAX_MATRIX_SIZE << ".\n";
+
+    prompt = "N - число строк матрицы A [1.." +
+             std::to_string(MAX_MATRIX_SIZE) + "]: ";
+    bool isOk = InputInt(prompt.c_str(), 1, MAX_MATRIX_SIZE, n);
+
+    if (isOk) {
+        prompt = "M - число столбцов A и строк B [1.." +
+                 std::to_string(MAX_MATRIX_SIZE / *n) + "]: ";
+        isOk = InputInt(prompt.c_str(), 1, MAX_MATRIX_SIZE / *n, m);
+    }
+    if (isOk) {
+        prompt = "L - число столбцов B и строк C [1.." +
+                 std::to_string(MAX_MATRIX_SIZE / *m) + "]: ";
+        isOk = InputInt(prompt.c_str(), 1, MAX_MATRIX_SIZE / *m, l);
+    }
+    if (isOk) {
+        prompt = "K - число столбцов матрицы C [1.." +
+                 std::to_string(MAX_MATRIX_SIZE / *l) + "]: ";
+        isOk = InputInt(prompt.c_str(), 1, MAX_MATRIX_SIZE / *l, k);
+    }
+    return isOk;
+}
+
+static bool InputMatrixManual(const char* name, double* matr,
+                              int rows, int cols) {
+    bool isOk = true;
+
+    std::cout << "\nВвод матрицы " << name << " (" << rows << " x "
+              << cols << "): по " << cols << " чис. в строке через пробел,\n"
+              << "значения от " << ELEM_MIN << " до " << ELEM_MAX
+              << ", не более 3 знаков после запятой.\n";
+    for (int line = 0; isOk && line < rows; ++line) {
+        std::string prompt = std::string(name) + ", строка " +
+            std::to_string(line + 1) + " из " + std::to_string(rows) + ": ";
+        isOk = InputRow(prompt.c_str(), cols, ELEM_MIN, ELEM_MAX,
+                        &matr[line * cols]);
+    }
+    return isOk;
+}
+
+static bool RunSession(void) {
+    int n = 0, m = 0, l = 0, k = 0;
+    int mode = 0;
+    double* matrA = nullptr;
+    double* matrB = nullptr;
+    double* matrC = nullptr;
+
+    /* --- 1. Ввод размеров --- */
+    bool isOk = InputDimensions(&n, &m, &l, &k);
+
+    /* --- 2. Вывод размеров и выделение памяти --- */
+    if (isOk) {
+        std::cout << "\nВведены размеры: A = " << n << " x " << m
+                  << ", B = " << m << " x " << l
+                  << ", C = " << l << " x " << k << "\n";
+        matrA = CreateMatrix(n, m);
+        matrB = CreateMatrix(m, l);
+        matrC = CreateMatrix(l, k);
+        if (matrA == nullptr || matrB == nullptr || matrC == nullptr) {
+            std::cout << "Ошибка: нет доступной динамической памяти!\n";
+            isOk = false;
+        }
+    }
+
+    /* --- 3. Выбор: ручной ввод или генерация --- */
+    if (isOk) {
+        isOk = InputInt("\nСпособ подготовки данных: 1 - ручной ввод, "
+                        "2 - автоматическая генерация (ЛКГ).\nВаш выбор: ",
+                        1, 2, &mode);
+    }
+
+    /* --- 4. Заполнение матриц --- */
+    if (isOk && mode == 1) {
+        isOk = InputMatrixManual("A", matrA, n, m);
+        if (isOk) {
+            isOk = InputMatrixManual("B", matrB, m, l);
+        }
+        if (isOk) {
+            isOk = InputMatrixManual("C", matrC, l, k);
+        }
+    } else if (isOk) {
+        int seed = 0;
+        isOk = InputInt("Начальное значение генератора (seed), "
+                        "целое от 0 до 999999999: ", 0, 999999999, &seed);
+        if (isOk) {
+            std::uint32_t state = static_cast<std::uint32_t>(seed);
+            FillMatrixRandom(matrA, n, m, &state);
+            FillMatrixRandom(matrB, m, l, &state);
+            FillMatrixRandom(matrC, l, k, &state);
+            std::cout << "Матрицы сгенерированы (значения от -100 до 100, "
+                         "3 знака после запятой).\n";
+        }
+    }
+
+    /* --- 5. Вывод матриц, расчёт и результат --- */
+    if (isOk) {
+        std::cout << "\n========== Исходные данные ==========\n";
+        PrintMatrix("A", matrA, n, m);
+        std::cout << '\n';
+        PrintMatrix("B", matrB, m, l);
+        std::cout << '\n';
+        PrintMatrix("C", matrC, l, k);
+
+        double aMax = FindMaxElement(matrA, n, m);
+        double bMax = FindMaxElement(matrB, m, l);
+        double cMax = FindMaxElement(matrC, l, k);
+        double beta = MinOfThree(AbsValue(aMax), AbsValue(bMax),
+                                 AbsValue(cMax));
+
+        std::cout << "\n============ Результат ============\n"
+                  << std::fixed << std::setprecision(3)
+                  << "amax = " << aMax << "\n"
+                  << "bmax = " << bMax << "\n"
+                  << "cmax = " << cMax << "\n"
+                  << "beta = min{|amax|, |bmax|, |cmax|} = "
+                  << beta << "\n";
+        std::cout.unsetf(std::ios_base::floatfield);
+    }
+
+    /* --- 6. Освобождение памяти (делается всегда) --- */
+    DestroyMatrix(&matrA);
+    DestroyMatrix(&matrB);
+    DestroyMatrix(&matrC);
+    return isOk;
+}
+
+/* *****************   Main function   *************************** */
+int main(void) { /* *** BEGIN ********************************** */
+/******************   Local variables   **************************/
+    bool isGoOn = true;
+    int again = 0;
+
+/******************     Code Segment    **************************/
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);         /* русские буквы в консоли */
+#endif
+    std::cout << "Нижегородский государственный технический университет\n"
+              << "Лабораторная работа 4. Вариант 12.\n"
+              << "Функции, указатели, динамическая память.\n"
+              << STUDENT_INFO << "\n\n";
+
+    while (isGoOn) {
+        isGoOn = RunSession();
+        if (isGoOn) {
+            isGoOn = InputInt("\nПовторить расчёт? 1 - да, 0 - нет: ",
+                              0, 1, &again) && (again == 1);
+        }
+        std::cout << '\n';
+    }
+    std::cout << "========== Конец работы программы ==========\n";
+    WaitForEnter("Нажмите Enter для выхода...");
+    return 0;
+} /* **** END ************************************************ */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Лабораторная работа 5. Вариант 19.
  * Определить количество слов в тексте и поменять местами
  * первое и пятое слова.
