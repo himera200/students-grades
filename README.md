@@ -1,3 +1,489 @@
+/*
+**************************************************************************
+* Нижегородский государственный технический университет *
+* Лабораторная работа №6 . Задание 1 . *
+* Выполнил студент группы 26-ИВТ-2-1 Баринов Кирилл Владимирович *
+**************************************************************************
+*/
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <numeric>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+using u64 = std::uint64_t;
+using u32 = std::uint32_t;
+
+namespace {
+    constexpr u64 A = 2041;
+    constexpr u64 C = 25673;
+    constexpr u64 MOD = 121500;
+    constexpr u64 INITIAL_SEED = 121493; // largest prime smaller than MOD
+    constexpr u64 DEFAULT_COUNT = 5'000'000'000ULL;
+    constexpr std::size_t BIN_COUNT = 20;
+    constexpr std::size_t BUFFER_COUNT = 1U << 20; // 1,048,576 values (~4 MiB)
+    constexpr long double CHI_SQUARE_CRITICAL_05_DF19 = 30.1435L;
+
+    bool isPrime(u64 n) {
+        if (n < 2) return false;
+        if (n % 2 == 0) return n == 2;
+        for (u64 d = 3; d <= n / d; d += 2) {
+            if (n % d == 0) return false;
+        }
+        return true;
+    }
+
+    // Hull-Dobell conditions for a full period of a mixed LCG.
+    bool hasFullPeriod(u64 a, u64 c, u64 m) {
+        if (std::gcd(c, m) != 1) return false;
+
+        u64 remaining = m;
+        for (u64 p = 2; p <= remaining / p; ++p) {
+            if (remaining % p == 0) {
+                if ((a - 1) % p != 0) return false;
+                while (remaining % p == 0) remaining /= p;
+            }
+        }
+        if (remaining > 1 && (a - 1) % remaining != 0) return false;
+        if (m % 4 == 0 && (a - 1) % 4 != 0) return false;
+        return true;
+    }
+
+    void writeHistogramCsv(const std::array<u64, BIN_COUNT>& bins, u64 n) {
+        std::ofstream out("histogram.csv");
+        if (!out) throw std::runtime_error("Не удалось создать histogram.csv");
+
+        out << "bin,left,right,count,relative_frequency,density,cumulative_frequency\n";
+        u64 cumulative = 0;
+        const long double width = 1.0L / static_cast<long double>(BIN_COUNT);
+        out << std::fixed << std::setprecision(10);
+
+        for (std::size_t i = 0; i < BIN_COUNT; ++i) {
+            cumulative += bins[i];
+            const long double left = static_cast<long double>(i) / BIN_COUNT;
+            const long double right = static_cast<long double>(i + 1) / BIN_COUNT;
+            const long double relative = static_cast<long double>(bins[i]) / n;
+            const long double density = relative / width;
+            const long double cumulativeFrequency = static_cast<long double>(cumulative) / n;
+            out << (i + 1) << ',' << left << ',' << right << ',' << bins[i] << ','
+                << relative << ',' << density << ',' << cumulativeFrequency << '\n';
+        }
+    }
+
+    void writeDensitySvg(const std::array<u64, BIN_COUNT>& bins, u64 n) {
+        constexpr int W = 1000, H = 600;
+        constexpr int L = 90, R = 35, T = 45, B = 85;
+        const long double plotW = W - L - R;
+        const long double plotH = H - T - B;
+        const long double binWidth = 1.0L / BIN_COUNT;
+
+        long double maxDensity = 0.0L;
+        for (u64 count : bins) {
+            const long double density = static_cast<long double>(count) / n / binWidth;
+            if (density > maxDensity) maxDensity = density;
+        }
+        const long double yMax = std::max(1.0L, maxDensity * 1.15L);
+
+        std::ofstream out("density_histogram.svg");
+        if (!out) throw std::runtime_error("Не удалось создать density_histogram.svg");
+        out << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << W
+            << "\" height=\"" << H << "\" viewBox=\"0 0 " << W << ' ' << H << "\">\n";
+        out << "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n";
+        out << "<text x=\"" << W / 2 << "\" y=\"28\" text-anchor=\"middle\" font-size=\"22\">"
+            << "Гистограмма плотности вероятности</text>\n";
+
+        for (int k = 0; k <= 5; ++k) {
+            const long double value = yMax * k / 5.0L;
+            const long double y = T + plotH - plotH * k / 5.0L;
+            out << "<line x1=\"" << L << "\" y1=\"" << y << "\" x2=\"" << W - R
+                << "\" y2=\"" << y << "\" stroke=\"#dddddd\"/>\n";
+            out << "<text x=\"" << L - 12 << "\" y=\"" << y + 5
+                << "\" text-anchor=\"end\" font-size=\"14\">" << std::setprecision(3)
+                << static_cast<double>(value) << "</text>\n";
+        }
+
+        const long double slot = plotW / BIN_COUNT;
+        for (std::size_t i = 0; i < BIN_COUNT; ++i) {
+            const long double density = static_cast<long double>(bins[i]) / n / binWidth;
+            const long double barH = plotH * density / yMax;
+            const long double x = L + i * slot + slot * 0.10L;
+            const long double y = T + plotH - barH;
+            out << "<rect x=\"" << x << "\" y=\"" << y << "\" width=\"" << slot * 0.80L
+                << "\" height=\"" << barH << "\" fill=\"#4c78a8\"/>\n";
+            out << "<text x=\"" << L + (i + 0.5L) * slot << "\" y=\"" << H - B + 25
+                << "\" text-anchor=\"middle\" font-size=\"12\">" << std::fixed
+                << std::setprecision(2) << static_cast<double>((i + 0.5L) * binWidth)
+                << "</text>\n";
+        }
+        out << "<line x1=\"" << L << "\" y1=\"" << T + plotH << "\" x2=\"" << W - R
+            << "\" y2=\"" << T + plotH << "\" stroke=\"black\" stroke-width=\"2\"/>\n";
+        out << "<line x1=\"" << L << "\" y1=\"" << T << "\" x2=\"" << L
+            << "\" y2=\"" << T + plotH << "\" stroke=\"black\" stroke-width=\"2\"/>\n";
+        out << "<text x=\"" << W / 2 << "\" y=\"" << H - 22
+            << "\" text-anchor=\"middle\" font-size=\"17\">Значение X в интервале [0; 1)</text>\n";
+        out << "<text x=\"24\" y=\"" << H / 2
+            << "\" transform=\"rotate(-90 24 " << H / 2
+            << ")\" text-anchor=\"middle\" font-size=\"17\">Плотность</text>\n";
+        out << "</svg>\n";
+    }
+
+
+    void xorTransformFile(const std::string& inputPath,
+        const std::string& outputPath,
+        const std::string& key) {
+        if (key.empty()) {
+            throw std::runtime_error("Ключ XOR не может быть пустым.");
+        }
+        if (inputPath == outputPath) {
+            throw std::runtime_error("Исходный и выходной файлы должны отличаться.");
+        }
+
+        std::ifstream input(inputPath, std::ios::binary);
+        if (!input) {
+            throw std::runtime_error("Не удалось открыть файл: " + inputPath);
+        }
+        std::ofstream output(outputPath, std::ios::binary | std::ios::trunc);
+        if (!output) {
+            throw std::runtime_error("Не удалось создать файл: " + outputPath);
+        }
+
+        // Обрабатываем файл блоками по 1 МиБ, не загружая весь файл в ОЗУ.
+        constexpr std::size_t BYTE_BUFFER_SIZE = 1U << 20;
+        std::array<unsigned char, BYTE_BUFFER_SIZE> buffer{};
+        u64 byteOffset = 0;
+
+        while (input) {
+            input.read(reinterpret_cast<char*>(buffer.data()),
+                static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize bytesRead = input.gcount();
+            if (bytesRead <= 0) break;
+
+            for (std::streamsize i = 0; i < bytesRead; ++i) {
+                const std::size_t keyIndex = static_cast<std::size_t>(
+                    (byteOffset + static_cast<u64>(i)) % key.size());
+                buffer[static_cast<std::size_t>(i)] ^=
+                    static_cast<unsigned char>(key[keyIndex]);
+            }
+
+            output.write(reinterpret_cast<const char*>(buffer.data()), bytesRead);
+            if (!output) {
+                throw std::runtime_error("Ошибка записи файла: " + outputPath +
+                    ". Проверьте свободное место на диске.");
+            }
+            byteOffset += static_cast<u64>(bytesRead);
+        }
+
+        if (input.bad()) {
+            throw std::runtime_error("Ошибка чтения файла: " + inputPath);
+        }
+        output.close();
+        if (!output) {
+            throw std::runtime_error("Ошибка завершения записи файла: " + outputPath);
+        }
+    }
+
+    bool filesAreEqual(const std::string& firstPath, const std::string& secondPath) {
+        std::ifstream first(firstPath, std::ios::binary);
+        std::ifstream second(secondPath, std::ios::binary);
+        if (!first || !second) return false;
+
+        constexpr std::size_t BUFFER_SIZE = 1U << 20;
+        std::array<char, BUFFER_SIZE> firstBuffer{};
+        std::array<char, BUFFER_SIZE> secondBuffer{};
+
+        while (true) {
+            first.read(firstBuffer.data(), static_cast<std::streamsize>(firstBuffer.size()));
+            second.read(secondBuffer.data(), static_cast<std::streamsize>(secondBuffer.size()));
+            const std::streamsize firstCount = first.gcount();
+            const std::streamsize secondCount = second.gcount();
+            if (firstCount != secondCount) return false;
+            if (firstCount > 0 && !std::equal(firstBuffer.begin(), firstBuffer.begin() + firstCount,
+                secondBuffer.begin())) return false;
+            if (firstCount == 0) return first.eof() && second.eof();
+        }
+    }
+
+    void writeCdfSvg(const std::array<u64, BIN_COUNT>& bins, u64 n) {
+        constexpr int W = 1000, H = 600;
+        constexpr int L = 90, R = 35, T = 45, B = 85;
+        const long double plotW = W - L - R;
+        const long double plotH = H - T - B;
+
+        std::ofstream out("cumulative_frequency.svg");
+        if (!out) throw std::runtime_error("Не удалось создать cumulative_frequency.svg");
+        out << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << W
+            << "\" height=\"" << H << "\" viewBox=\"0 0 " << W << ' ' << H << "\">\n";
+        out << "<rect width=\"100%\" height=\"100%\" fill=\"white\"/>\n";
+        out << "<text x=\"" << W / 2 << "\" y=\"28\" text-anchor=\"middle\" font-size=\"22\">"
+            << "График накопленных относительных частот</text>\n";
+
+        for (int k = 0; k <= 5; ++k) {
+            const long double value = k / 5.0L;
+            const long double y = T + plotH - plotH * value;
+            out << "<line x1=\"" << L << "\" y1=\"" << y << "\" x2=\"" << W - R
+                << "\" y2=\"" << y << "\" stroke=\"#dddddd\"/>\n";
+            out << "<text x=\"" << L - 12 << "\" y=\"" << y + 5
+                << "\" text-anchor=\"end\" font-size=\"14\">" << std::fixed
+                << std::setprecision(1) << static_cast<double>(value) << "</text>\n";
+        }
+
+        out << "<polyline fill=\"none\" stroke=\"#e45756\" stroke-width=\"3\" points=\"";
+        out << L << ',' << T + plotH << ' ';
+        u64 cumulative = 0;
+        for (std::size_t i = 0; i < BIN_COUNT; ++i) {
+            cumulative += bins[i];
+            const long double x = L + plotW * (i + 1) / BIN_COUNT;
+            const long double f = static_cast<long double>(cumulative) / n;
+            const long double y = T + plotH - plotH * f;
+            out << x << ',' << y << ' ';
+        }
+        out << "\"/>\n";
+
+        out << "<line x1=\"" << L << "\" y1=\"" << T + plotH << "\" x2=\"" << W - R
+            << "\" y2=\"" << T + plotH << "\" stroke=\"black\" stroke-width=\"2\"/>\n";
+        out << "<line x1=\"" << L << "\" y1=\"" << T << "\" x2=\"" << L
+            << "\" y2=\"" << T + plotH << "\" stroke=\"black\" stroke-width=\"2\"/>\n";
+        for (int k = 0; k <= 10; ++k) {
+            const long double x = L + plotW * k / 10.0L;
+            out << "<text x=\"" << x << "\" y=\"" << H - B + 25
+                << "\" text-anchor=\"middle\" font-size=\"13\">" << std::fixed
+                << std::setprecision(1) << k / 10.0 << "</text>\n";
+        }
+        out << "<text x=\"" << W / 2 << "\" y=\"" << H - 22
+            << "\" text-anchor=\"middle\" font-size=\"17\">Значение X в интервале [0; 1)</text>\n";
+        out << "<text x=\"24\" y=\"" << H / 2
+            << "\" transform=\"rotate(-90 24 " << H / 2
+            << ")\" text-anchor=\"middle\" font-size=\"17\">F(X)</text>\n";
+        out << "</svg>\n";
+    }
+
+} // namespace
+
+int main() {
+    std::cout << "Лабораторная работа: моделирование и исследование ГПСЧ\n";
+    std::cout << "Вариант 3: X(n+1) = (2041 * X(n) + 25673) mod 121500\n\n";
+    std::cout << "Введите количество генерируемых чисел (0 = 5 000 000 000): ";
+
+    u64 count = 0;
+    if (!(std::cin >> count)) {
+        std::cerr << "Ошибка ввода количества чисел.\n";
+        return 1;
+    }
+    if (count == 0) count = DEFAULT_COUNT;
+
+    if (!isPrime(INITIAL_SEED) || INITIAL_SEED >= MOD) {
+        std::cerr << "Ошибка: начальное значение должно быть простым и меньше m.\n";
+        return 1;
+    }
+
+    std::cout << "\nНачальное значение X0 = " << INITIAL_SEED
+        << (count < DEFAULT_COUNT ? "\nТестовый запуск: объем меньше требуемых 5 млрд.\n" : "\n")
+        << "Бинарный файл: prng_variant3.bin\n"
+        << "Ожидаемый размер файла: "
+        << static_cast<long double>(count) * sizeof(u32) / (1024.0L * 1024.0L * 1024.0L)
+        << " ГиБ\n\n";
+
+    std::ofstream binary("prng_variant3.bin", std::ios::binary | std::ios::trunc);
+    if (!binary) {
+        std::cerr << "Не удалось создать prng_variant3.bin.\n";
+        return 1;
+    }
+
+    std::array<u64, BIN_COUNT> bins{};
+    std::vector<u32> buffer;
+    buffer.reserve(BUFFER_COUNT);
+
+    long double sum = 0.0L;
+    long double sumSquares = 0.0L;
+
+    // Sums for Pearson correlation between neighbouring values (X[i], X[i+1]).
+    long double leftSum = 0.0L, rightSum = 0.0L;
+    long double leftSquares = 0.0L, rightSquares = 0.0L;
+    long double productSum = 0.0L;
+    long double previous = 0.0L;
+    bool hasPrevious = false;
+
+    u64 state = INITIAL_SEED;
+    const u64 progressStep = std::max<u64>(1, count / 50);
+
+    for (u64 i = 0; i < count; ++i) {
+        state = (A * state + C) % MOD;
+        const u32 value = static_cast<u32>(state);
+        buffer.push_back(value);
+
+        const long double normalized = static_cast<long double>(value) / MOD;
+        sum += normalized;
+        sumSquares += normalized * normalized;
+
+        const std::size_t bin = static_cast<std::size_t>((state * BIN_COUNT) / MOD);
+        ++bins[bin];
+
+        if (hasPrevious) {
+            leftSum += previous;
+            rightSum += normalized;
+            leftSquares += previous * previous;
+            rightSquares += normalized * normalized;
+            productSum += previous * normalized;
+        }
+        previous = normalized;
+        hasPrevious = true;
+
+        if (buffer.size() == BUFFER_COUNT) {
+            binary.write(reinterpret_cast<const char*>(buffer.data()),
+                static_cast<std::streamsize>(buffer.size() * sizeof(u32)));
+            if (!binary) {
+                std::cerr << "Ошибка записи бинарного файла. Проверьте свободное место на диске.\n";
+                return 1;
+            }
+            buffer.clear();
+        }
+
+        if ((i + 1) % progressStep == 0 || i + 1 == count) {
+            const long double percent = 100.0L * static_cast<long double>(i + 1) / count;
+            std::cout << "\rСформировано: " << std::fixed << std::setprecision(1)
+                << static_cast<double>(percent) << "% (" << (i + 1)
+                << "/" << count << ")" << std::flush;
+        }
+    }
+
+    if (!buffer.empty()) {
+        binary.write(reinterpret_cast<const char*>(buffer.data()),
+            static_cast<std::streamsize>(buffer.size() * sizeof(u32)));
+    }
+    binary.close();
+    if (!binary) {
+        std::cerr << "Ошибка завершения записи бинарного файла.\n";
+        return 1;
+    }
+    std::cout << "\nГенерация завершена.\n";
+
+    // XOR-шифрование созданного бинарного файла повторяющимся ключом.
+    std::string xorKey;
+    std::cout << "\nШИФРОВАНИЕ ФАЙЛА МЕТОДОМ XOR\n";
+    std::cout << "Введите непустой ключ XOR: ";
+    std::getline(std::cin >> std::ws, xorKey);
+    if (xorKey.empty()) {
+        std::cerr << "Ключ XOR не может быть пустым.\n";
+        return 1;
+    }
+
+    const std::string encryptedFile = "prng_variant3_encrypted.bin";
+    try {
+        xorTransformFile("prng_variant3.bin", encryptedFile, xorKey);
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Ошибка XOR-шифрования: " << e.what() << '\n';
+        return 1;
+    }
+    std::cout << "Файл зашифрован: " << encryptedFile << '\n';
+    std::cout << "Формула: C[i] = P[i] XOR key[i mod длина_ключа].\n";
+
+    char verifyChoice = 'n';
+    std::cout << "Проверить расшифрование и создать восстановленный файл? (y/n): ";
+    std::cin >> verifyChoice;
+    bool xorRoundTripVerified = false;
+    const std::string decryptedCheckFile = "prng_variant3_decrypted_check.bin";
+    if (verifyChoice == 'y' || verifyChoice == 'Y') {
+        try {
+            // XOR обратим: (P XOR K) XOR K = P.
+            xorTransformFile(encryptedFile, decryptedCheckFile, xorKey);
+            xorRoundTripVerified = filesAreEqual("prng_variant3.bin", decryptedCheckFile);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Ошибка проверки расшифрования: " << e.what() << '\n';
+            return 1;
+        }
+        std::cout << (xorRoundTripVerified
+            ? "Проверка пройдена: восстановленный файл совпадает с исходным.\n"
+            : "Ошибка: восстановленный файл отличается от исходного.\n");
+    }
+
+    const long double n = static_cast<long double>(count);
+    const long double mean = sum / n;
+    long double variance = 0.0L;
+    if (count > 1) {
+        variance = (sumSquares - (sum * sum) / n) / (n - 1.0L);
+        if (variance < 0.0L && variance > -1e-18L) variance = 0.0L;
+    }
+
+    long double correlation = 0.0L;
+    const u64 pairCount = count > 0 ? count - 1 : 0;
+    if (pairCount > 1) {
+        const long double p = static_cast<long double>(pairCount);
+        const long double covarianceNumerator = productSum - (leftSum * rightSum) / p;
+        const long double leftVarianceNumerator = leftSquares - (leftSum * leftSum) / p;
+        const long double rightVarianceNumerator = rightSquares - (rightSum * rightSum) / p;
+        const long double denominator = std::sqrt(std::max(0.0L, leftVarianceNumerator * rightVarianceNumerator));
+        if (denominator > 0.0L) correlation = covarianceNumerator / denominator;
+    }
+
+    const long double expected = n / BIN_COUNT;
+    long double chiSquare = 0.0L;
+    for (u64 observed : bins) {
+        const long double difference = static_cast<long double>(observed) - expected;
+        chiSquare += difference * difference / expected;
+    }
+
+    const bool fullPeriod = hasFullPeriod(A, C, MOD);
+    const long double theoreticalVariance = 1.0L / 12.0L;
+    const long double discreteMean = (static_cast<long double>(MOD) - 1.0L) / (2.0L * MOD);
+    const long double discreteVariance =
+        (static_cast<long double>(MOD) * MOD - 1.0L) /
+        (12.0L * static_cast<long double>(MOD) * MOD);
+
+    try {
+        writeHistogramCsv(bins, count);
+        writeDensitySvg(bins, count);
+        writeCdfSvg(bins, count);
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Ошибка создания файлов статистики: " << e.what() << '\n';
+        return 1;
+    }
+
+    std::ofstream report("report_variant3.txt");
+    if (!report) {
+        std::cerr << "Не удалось создать report_variant3.txt.\n";
+        return 1;
+    }
+
+    report << "ЛАБОРАТОРНАЯ РАБОТА\n"
+        << "Моделирование и исследование генератора псевдослучайных чисел\n\n"
+        << "Вариант: 3\n"
+        << "Алгоритм: X(n+1) = (a * X(n) + c) mod m\n"
+        << "a = " << A << ", c = " << C << ", m = " << MOD << '\n'
+        << "Начальное значение X0 = " << INITIAL_SEED << " (простое число)\n"
+        << "Количество сгенерированных значений N = " << count << '\n'
+        << "Файл с выборкой: prng_variant3.bin (двоичный формат, uint32_t)\n"
+        << "XOR-шифрование: prng_variant3_encrypted.bin\n"
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #include <iostream>
 #include <iomanip>
 #include <sstream>
